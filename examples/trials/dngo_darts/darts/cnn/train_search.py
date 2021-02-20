@@ -22,22 +22,18 @@ class Train:
   def __init__(self):
 
     self.data='./data'
-    # self.batch_size= 96
-    self.batch_size= 18
-
+    self.batch_size= 96
     self.learning_rate= 0.025
     self.momentum= 0.9
     self.weight_decay = 3e-4
     self.load_weights = 0
     self.report_freq = 500
-    self.gpu = 0
+    self.gpu = 2
     # self.epochs = 50
-    self.epochs = 2
+    self.epochs = 5
 
     self.init_channels = 36
-    # self.layers = 20
-    self.layers = 5
-
+    self.layers = 20
     self.auxiliary  = True
     self.auxiliary_weight = 0.4
     self.cutout = True
@@ -50,12 +46,12 @@ class Train:
     self.validation_set = True
     self.CIFAR_CLASSES = 10
 
-  def main(self, counter, seed, arch, epochs=3, gpu=0, load_weights=False, train_portion=0.9, save='model_search'):
+  def main(self, counter, seed, arch, epochs=50, gpu=0, load_weights=False, train_portion=0.9, save='model_search'):
 
     # Set up save file and logging
     self.save = save
     self.save = '{}'.format(self.save)
-    # utils.create_exp_dir(self.save, scripts_to_save=glob.glob('*.py'))
+    utils.create_exp_dir(self.save, scripts_to_save=glob.glob('*.py'))
     log_format = '%(asctime)s %(message)s'
     logging.basicConfig(stream=sys.stdout, level=logging.INFO,
         format=log_format, datefmt='%m/%d %I:%M:%S %p')
@@ -73,9 +69,9 @@ class Train:
       self.validation_set = False
     self.seed = seed
 
-    logging.info('Train class params')
-    logging.info('arch: {}, epochs: {}, gpu: {}, load_weights: {}, train_portion: {}'
-     .format(arch, epochs, gpu, load_weights, train_portion))
+    #logging.info('Train class params')
+    #logging.info('arch: {}, epochs: {}, gpu: {}, load_weights: {}, train_portion: {}'
+    #  .format(arch, epochs, gpu, load_weights, train_portion))
 
     # cpu-gpu switch
     if not torch.cuda.is_available():
@@ -91,7 +87,7 @@ class Train:
       cudnn.benchmark = False
       cudnn.enabled=True
       cudnn.deterministic=True
-      # logging.info('gpu device = %d' % self.gpu)
+      #logging.info('gpu device = %d' % self.gpu)
 
     Genotype = namedtuple('Genotype', 'normal normal_concat reduce reduce_concat')
     genotype = eval(self.convert_to_genotype(counter, arch))
@@ -150,18 +146,11 @@ class Train:
     test_accs = []
 
     for epoch in range(self.epochs):
-      print("@MAY before")
-
       logging.info('epoch %d lr %e', epoch, scheduler.get_lr()[0])
       print('epoch {} lr {}'.format(epoch, scheduler.get_lr()[0]))
-      
-
       model.drop_path_prob = self.drop_path_prob * epoch / self.epochs
 
-      print("@MAY begin train")
       train_acc, train_obj = self.train(train_queue, model, criterion, optimizer)
-      print("@MAY finish train")
-
 
       if self.validation_set:
         valid_acc, valid_obj = self.infer(valid_queue, model, criterion)
@@ -198,9 +187,7 @@ class Train:
     objs = utils.AvgrageMeter()
     top1 = utils.AvgrageMeter()
     top5 = utils.AvgrageMeter()
-    print("@begin model.train()")
     model.train()
-    print("@finish model.train()")
 
     for step, (input, target) in enumerate(train_queue):
       device = torch.device('cuda:{}'.format(self.gpu) if torch.cuda.is_available() else 'cpu')
@@ -223,12 +210,6 @@ class Train:
       objs.update(loss.item(), n)
       top1.update(prec1.item(), n)
       top5.update(prec5.item(), n)  
-      print("@finish loop #", step)
-
-
-    
-    print("@finish for")
-    print("top1.avg, objs.avg ", top1.avg, objs.avg)
 
 
     return top1.avg, objs.avg

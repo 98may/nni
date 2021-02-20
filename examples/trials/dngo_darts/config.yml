@@ -2,7 +2,7 @@ authorName: Ayan Mao
 experimentName: arch2vec_dngo_darts
 trialConcurrency: 1
 maxExecDuration: 1h
-maxTrialNum: 10
+maxTrialNum: 56
 trainingServicePlatform: local  # choices: local, remote, pai
 searchSpacePath: search_space.json
 useAnnotation: false
@@ -17,4 +17,4 @@ tuner:
 trial:
   command: python3 trial.py
   codeDir: .
-  gpuNum: 0
+  gpuNum: 1

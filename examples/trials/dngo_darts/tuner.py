@@ -4,10 +4,15 @@ import torch
 import numpy as np
 import argparse
 from collections import defaultdict
+import os
 
 from dngo_darts import load_arch2vec
 from dngo_darts import get_init_samples
 from dngo_darts import query
+
+from dngo import DNGO
+from torch.distributions import Normal
+
 
 
 
@@ -20,7 +25,7 @@ class MayTuner(Tuner):
         self.feat_next = []
         self.geno_next = []
         self.proposed_geno = []
-        self.i_geno = 1
+        self.i_geno = 0
         self.init_valid_label_samples = []
         self.init_test_label_samples = []
         self.proposed_val_acc = []
@@ -37,14 +42,17 @@ class MayTuner(Tuner):
         self.best_trace = defaultdict(list)
 
         torch.manual_seed(3)
-        self.embedding_path = "/home/v-ayanmao/msra/nni/examples/trials/dngo-darts/arch2vec-darts.pt"
+        
+        # print(os.getcwd())
+        # self.embedding_path = os.getcwd()+"/arch2vec-darts.pt"
+        # if not self.embedding_path.exists():
+        #     print("path not exist")
+
+        self.embedding_path = "/home/v-ayanmao/msra/nni/examples/trials/may/arch2vec-darts.pt"
         self.features, self.genotype = load_arch2vec(self.embedding_path)
         self.features, self.genotype = self.features.cpu().detach(), self.genotype
 
 
-        # feat_samples, geno_samples, valid_label_samples, test_label_samples, visited = get_init_samples(self.features, self.genotype, self.visited)
-        # count = 0
-        # np.random.seed(args.seed)
 
         # part of "def get_init_samples"
         np.random.seed(3)
@@ -81,8 +89,8 @@ class MayTuner(Tuner):
             self.proposed_val_acc = []
             self.proposed_test_acc = []
         
-        val_acc = value[0]
-        test_acc = value[1]
+        val_acc = value["default"]
+        test_acc = value["test_acc"]
 
         # proposed_val_acc.append(val_acc)
         # proposed_test_acc.append(test_acc)
@@ -90,23 +98,9 @@ class MayTuner(Tuner):
         # self.i_geno == len(self.proposed_geno) means a batch arch queries finish, 
         # now update DNGO_model (to generate next betch genos in "generate_parameters")
 
-        if arch0_flag:
+        if self.arch0_flag:
             self.init_valid_label_samples.append(val_acc)
             self.init_test_label_samples.append(test_acc)
-            if self.i_geno == len(self.proposed_geno):
-                # self.i_geno = 1
-                self.valid_label_samples = torch.Tensor(self.init_valid_label_samples)
-                self.test_label_samples = torch.Tensor(self.init_test_label_samples)
-                # above: finish "def get_init_samples"
-                for feat, geno, acc_valid, acc_test in zip(self.feat_samples, self.geno_samples, self.vvalid_label_samples, self.vtest_label_samples):
-                    if acc_valid > CURR_BEST_VALID:
-                        self.CURR_BEST_VALID = acc_valid
-                        self.CURR_BEST_TEST = acc_test
-                        self.CURR_BEST_GENOTYPE = geno
-                    self.best_trace['validation_acc'].append(float(self.CURR_BEST_VALID))
-                    self.best_trace['test_acc'].append(float(self.CURR_BEST_TEST))
-                    self.best_trace['genotype'].append(self.CURR_BEST_GENOTYPE)
-                    self.best_trace['counter'].append(self.counter)
         else:
             # part of "def propose_location"
             self.proposed_val_acc.append(val_acc)
@@ -120,8 +114,8 @@ class MayTuner(Tuner):
                     self.geno_samples.append(geno)
                     self.valid_label_samples = torch.cat((self.valid_label_samples.view(-1, 1), acc_valid.view(1, 1)), dim=0)
                     self.test_label_samples = torch.cat((self.test_label_samples.view(-1, 1), acc_test.view(1, 1)), dim=0)
-                    counter += 1
-                    if acc_valid.item() > CURR_BEST_VALID:
+                    # self.counter += 1
+                    if acc_valid.item() > self.CURR_BEST_VALID:
                         self.CURR_BEST_VALID = acc_valid
                         self.CURR_BEST_TEST = acc_test
                         self.CURR_BEST_GENOTYPE = geno
@@ -139,25 +133,47 @@ class MayTuner(Tuner):
         self.counter += 1
         print("@len(self.proposed_geno) = ", len(self.proposed_geno))
         print("@self.i_geno = ", self.i_geno)
-        print("@self.proposed_geno", self.proposed_geno)
+        # print("@self.proposed_geno", self.proposed_geno)
         if self.i_geno < len(self.proposed_geno):
             next_geno = self.proposed_geno[self.i_geno]
-            # print("@next_geno==self.proposed_geno[self.i_geno] : ", next_geno)
             self.i_geno += 1
         else:
+            if self.arch0_flag:
+                self.valid_label_samples = torch.Tensor(self.init_valid_label_samples)
+                self.test_label_samples = torch.Tensor(self.init_test_label_samples)
+                # above: finish "def get_init_samples"
+                for feat, geno, acc_valid, acc_test in zip(self.feat_samples, self.geno_samples, self.valid_label_samples, self.test_label_samples):
+                    if acc_valid > self.CURR_BEST_VALID:
+                        self.CURR_BEST_VALID = acc_valid
+                        self.CURR_BEST_TEST = acc_test
+                        self.CURR_BEST_GENOTYPE = geno
+                    self.best_trace['validation_acc'].append(float(self.CURR_BEST_VALID))
+                    self.best_trace['test_acc'].append(float(self.CURR_BEST_TEST))
+                    self.best_trace['genotype'].append(self.CURR_BEST_GENOTYPE)
+                    self.best_trace['counter'].append(self.counter)
+
             self.arch0_flag = False
+
+            print("@len(self.proposed_geno) = ", len(self.proposed_geno))
             print("feat_samples:", self.feat_samples.shape)
             print("length of genotypes:", len(self.geno_samples))
-            # print("valid label_samples:", self.valid_label_samples.shape)
-            # print("test label samples:", self.test_label_samples.shape)
+            print("valid label_samples:", self.valid_label_samples.shape)
+            print("test label samples:", self.test_label_samples.shape)
             print("current best validation: {}".format(self.CURR_BEST_VALID))
             print("current best test: {}".format(self.CURR_BEST_TEST))
             print("counter: {}".format(self.counter))
             print(self.feat_samples.shape)
             print(self.valid_label_samples.shape)
-            # model = DNGO(num_epochs=100, n_units=128, do_mcmc=False, normalize_output=False)
-            model = DNGO(num_epochs=10, n_units=128, do_mcmc=False, normalize_output=False)
+
+            if __debug__:
+                print("__debug__ on, quick, demo walkthrogh")
+                model = DNGO(num_epochs=7, n_units=128, do_mcmc=False, normalize_output=False)
+            else:
+                print("__debug__ off, slow, real tuned")
+                model = DNGO(num_epochs=100, n_units=128, do_mcmc=False, normalize_output=False)
+
             model.train(X=self.feat_samples.numpy(), y=self.valid_label_samples.view(-1).numpy(), do_optimize=True)
+            print("@finish model.train()")
             print(model.network)
             m = []
             v = []
@@ -169,6 +185,7 @@ class MayTuner(Tuner):
                 m_split, v_split = model.predict(features_split[i].numpy())
                 m.extend(list(m_split))
                 v.extend(list(v_split))
+            print("@finish for chunks")
             mean = torch.Tensor(m)
             sigma = torch.Tensor(v)
             # u = (mean - torch.Tensor([args.objective]).expand_as(mean)) / sigma
@@ -178,20 +195,21 @@ class MayTuner(Tuner):
             updf = torch.exp(normal.log_prob(u))
             ei = sigma * (updf + u * ucdf)
 
+            print("@ei = ", ei)
             # feat_next, geno_next, label_next_valid, label_next_test, visited = propose_location(ei, features, genotype, visited, counter)
             count = self.counter
             # k = args.batch_size
             k = 5
             c = 0
-            print('remaining length of indices set:', len(features) - len(visited))
+            print('remaining length of indices set:', len(self.features) - len(self.visited))
             indices = torch.argsort(ei)
             ind_dedup = []
             # remove random sampled indices at each step
             for idx in reversed(indices):
                 if c == k:
                     break
-                if idx.item() not in visited:
-                    visited[idx.item()] = True
+                if idx.item() not in self.visited:
+                    self.visited[idx.item()] = True
                     ind_dedup.append(idx.item())
                     c += 1
             ind_dedup = torch.Tensor(ind_dedup).long()
@@ -205,7 +223,7 @@ class MayTuner(Tuner):
             self.geno_next = self.proposed_geno
             # print("@next_geno==self.proposed_geno[0] : ", next_geno)
 
-        print("@No.{0} geno : ".format(self.counter, next_geno))
+        print("@No.{0} geno : {1}".format(self.counter, next_geno))
         return next_geno
     
 
